@@ -1,5 +1,4 @@
 swarms
 loguru
 PyPDF2
-PyPDF2
 reportlab
