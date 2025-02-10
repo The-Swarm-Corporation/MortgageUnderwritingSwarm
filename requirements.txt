@@ -1,5 +1,5 @@
 swarms
 loguru
-python-dotenv
-pyyaml
-swarm-models
+PyPDF2
+PyPDF2
+reportlab
