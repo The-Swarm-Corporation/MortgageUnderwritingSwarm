@@ -1,22 +1,98 @@
+import concurrent.futures
 import json
 import os
+import time
+import uuid
 from io import BytesIO
 from typing import Dict, List, Union
+
 import PyPDF2
+from pydantic import BaseModel, Field
 from reportlab.lib.pagesizes import LETTER
 from reportlab.pdfgen import canvas
 
 from swarms import Agent
 
 
+def user_id_generator():
+    return str(uuid.uuid4().hex)
+
+
+timestamp = time.strftime("%Y%m%d_%H%M%S")
+# print(timestamp)
+
+
+class MortgageApplicationInput(BaseModel):
+    user_id: str = Field(default_factory=user_id_generator)
+    timestamp: str = Field(default_factory=timestamp)
+    application_data: str = Field(
+        description="The raw text of the mortgage application."
+    )
+
+
+class MortgageApplicationOutput(BaseModel):
+    user_id: str = Field(default_factory=user_id_generator)
+    input_data: MortgageApplicationInput = Field(
+        description="The input data for the mortgage application."
+    )
+    document_analysis: str = Field(
+        description="The structured analysis of the mortgage application."
+    )
+    risk_evaluation: str = Field(
+        description="The risk evaluation of the mortgage application."
+    )
+    underwriting_decision: str = Field(
+        description="The underwriting decision of the mortgage application."
+    )
+
+
+def clean_markdown(text: str) -> str:
+    """
+    Removes all markdown symbols from text.
+
+    Args:
+        text (str): Text containing markdown symbols
+
+    Returns:
+        str: Text with markdown symbols removed
+    """
+    markdown_symbols = [
+        "```markdown",
+        "```",
+        "#",
+        "*",
+        "_",
+        "`",
+        ">",
+        "-",
+        "+",
+        "[",
+        "]",
+        "(",
+        ")",
+        "|",
+    ]
+    cleaned_text = text
+    for symbol in markdown_symbols:
+        cleaned_text = cleaned_text.replace(symbol, "")
+    return cleaned_text.strip()
+
+
 class MortgageUnderwritingSwarm:
-    def __init__(self, save_directory: str = "./autosave"):
+    def __init__(
+        self,
+        user_id: str = user_id_generator(),
+        save_directory: str = "./autosave",
+        return_format: str = "pdf",
+    ):
         """
         Initialize the MortgageUnderwritingSwarm with the necessary Agents.
         Args:
             save_directory (str): Directory where intermediate results and final documents will be autosaved.
         """
+        self.user_id = user_id
         self.save_directory = save_directory
+        self.return_format = return_format
         os.makedirs(self.save_directory, exist_ok=True)
 
         # -------------------------------
@@ -29,14 +105,50 @@ class MortgageUnderwritingSwarm:
             streaming_on=True,
         )
         self.document_prompt = """
-You are a highly experienced Mortgage Document Analysis Expert. Your task is to:
-1. Parse and extract key data from unstructured documents (PDF or text).
-2. Validate data consistency (income, credit scores, property details, etc.).
-3. Highlight any discrepancies or red flags.
-4. Provide a well-structured, clearly formatted summary of all findings.
-5. Indicate any missing or ambiguous information.
-6. Prepare your output so it can be easily consumed by subsequent agents.
-"""
+        You are a highly experienced Mortgage Document Analysis Expert with deep knowledge of federal and state mortgage regulations. Your task is to:
+
+        1. Parse and extract key data from unstructured documents (PDF or text) while ensuring compliance with:
+        - Truth in Lending Act (TILA) requirements
+        - Real Estate Settlement Procedures Act (RESPA) guidelines
+        - Fair Credit Reporting Act (FCRA) standards
+        - Equal Credit Opportunity Act (ECOA) requirements
+
+        2. Validate data consistency and regulatory compliance for:
+        - Income verification (including all sources of income)
+        - Credit scores and credit history
+        - Property details and appraisal information
+        - Debt obligations and payment history
+        - Employment verification
+        - Asset documentation
+        - Identity verification documents
+
+        3. Highlight any discrepancies, red flags, or potential compliance violations, including:
+        - Inconsistencies in reported income vs documentation
+        - Suspicious patterns in bank statements
+        - Potential identity theft indicators
+        - Missing required regulatory disclosures
+        - Fair lending concerns
+        - Anti-money laundering (AML) red flags
+
+        4. Provide a comprehensive, well-structured summary that includes:
+        - All key findings organized by category
+        - Compliance checklist results
+        - Documentation completeness assessment
+        - Regulatory disclosure verification
+        - Quality control notes
+
+        5. Clearly indicate any missing or ambiguous information required by:
+        - Federal regulations
+        - State-specific requirements
+        - Agency guidelines (FHA, VA, Fannie Mae, Freddie Mac)
+        - Internal compliance policies
+
+        6. Format output in a standardized structure that:
+        - Facilitates automated compliance checks
+        - Enables clear audit trails
+        - Supports regulatory reporting requirements
+        - Can be easily consumed by subsequent agents
+        """
 
         # -------------------------------
         # 2) Risk Evaluator Agent
@@ -48,16 +160,52 @@ You are a highly experienced Mortgage Document Analysis Expert. Your task is to:
             streaming_on=True,
         )
         self.risk_prompt = """
-You are an expert Risk Evaluator for mortgage applications. Your responsibilities:
-1. Use the structured data from the Document Analyzer to gauge risk factors:
-   - Debt-to-income ratio
-   - Credit history, payment delinquencies
-   - Property appraisal vs. requested loan amount
-2. Assign a risk score on a scale of 1-10, with justification.
-3. Highlight any specific high-risk elements or red flags.
-4. Recommend potential mitigations or additional documentation required.
-5. Output a detailed analysis along with the risk score and rationale.
-"""
+        You are an expert Risk Evaluator for mortgage applications with comprehensive knowledge of regulatory compliance. Your responsibilities:
+
+        1. Conduct thorough risk assessment in accordance with:
+        - Dodd-Frank Act requirements
+        - Consumer Financial Protection Bureau (CFPB) guidelines
+        - Federal Reserve Board regulations
+        - Agency-specific requirements (FHA, VA, Fannie Mae, Freddie Mac)
+
+        2. Evaluate key risk factors including:
+        - Debt-to-income ratio (DTI) compliance with QM rules
+        - Credit history analysis per FCRA guidelines
+        - Property valuation in line with USPAP standards
+        - Income stability and verification per agency requirements
+        - Assets and reserves adequacy
+        - Employment history and verification
+        - Occupancy risk assessment
+        - Property type and use restrictions
+
+        3. Calculate and assign risk scores:
+        - Overall application risk score (1-10 scale)
+        - Individual component risk scores
+        - Regulatory compliance risk assessment
+        - Fraud risk indicators
+        - Default risk probability
+
+        4. Identify and document:
+        - High-risk elements requiring additional scrutiny
+        - Potential regulatory compliance issues
+        - Required compensating factors
+        - Secondary market eligibility concerns
+        - Fair lending considerations
+
+        5. Recommend risk mitigation strategies:
+        - Additional documentation requirements
+        - Income/asset verification needs
+        - Compensating factor documentation
+        - Alternative qualification approaches
+        - Regulatory compliance remediation steps
+
+        6. Generate comprehensive risk analysis including:
+        - Detailed risk assessment findings
+        - Compliance verification results
+        - Supporting documentation requirements
+        - Clear justification for all conclusions
+        - Regulatory requirement adherence confirmation
+        """
 
         # -------------------------------
         # 3) Mortgage Underwriter Agent
@@ -69,13 +217,62 @@ You are an expert Risk Evaluator for mortgage applications. Your responsibilitie
             streaming_on=True,
         )
         self.underwriter_prompt = """
-You are a seasoned Mortgage Underwriter. Combine the outputs from the Document Analyzer and Risk Evaluator to:
-1. Make a final underwriting decision: Approved, Conditionally Approved, or Denied.
-2. If Conditionally Approved, specify conditions clearly.
-3. Provide a structured explanation, referencing the applicant's financial status and risk score.
-4. Adhere to standard underwriting practices and regulatory guidelines in your justification.
-5. Output a decision report that can be formatted into PDF or JSON as needed.
-"""
+        You are a seasoned Mortgage Underwriter with expertise in regulatory compliance and industry standards. Your role is to:
+
+        1. Make final underwriting decisions while ensuring compliance with:
+        - Qualified Mortgage (QM) and Ability-to-Repay (ATR) rules
+        - Fair lending laws (ECOA, FHA, HMDA)
+        - Agency guidelines (FHA, VA, Fannie Mae, Freddie Mac)
+        - State-specific lending requirements
+        - Internal credit policies and procedures
+
+        2. Review and synthesize:
+        - Document Analyzer findings
+        - Risk Evaluator assessments
+        - Compliance verification results
+        - Quality control checks
+        - Regulatory requirements
+        - Secondary market guidelines
+
+        3. Determine appropriate decision category:
+        - Approved
+        - Conditionally Approved (with specific conditions)
+        - Denied (with detailed adverse action notice requirements)
+        - Counteroffer recommendations
+        - Alternative program suggestions
+
+        4. For all decisions, provide:
+        - Clear written justification
+        - Regulatory compliance confirmation
+        - Required disclosures identification
+        - Adverse action notices if required
+        - Fair lending analysis documentation
+        - Secondary market eligibility determination
+
+        5. For conditional approvals, specify:
+        - Required documentation
+        - Timeline requirements
+        - Regulatory compliance conditions
+        - Prior-to-funding conditions
+        - Post-closing requirements
+        - Quality control conditions
+
+        6. Generate comprehensive decision report including:
+        - Detailed underwriting analysis
+        - Compliance verification results
+        - Supporting documentation list
+        - Condition status tracking
+        - Regulatory requirement satisfaction
+        - Clear audit trail documentation
+
+        7. Ensure all decisions adhere to:
+        - Fair lending requirements
+        - Anti-discrimination laws
+        - UDAAP regulations
+        - State and federal disclosure requirements
+        - Agency and investor guidelines
+        - Internal policies and procedures
+        """
 
     # --------------------------------------------------------------------------
     # Utility Methods
@@ -96,7 +293,9 @@ You are a seasoned Mortgage Underwriter. Combine the outputs from the Document A
                 text_content.append(page_text)
         return "\n".join(text_content)
 
-    def autosave_result(self, result_data: str, filename: str) -> None:
+    def autosave_result(
+        self, result_data: str, filename: str
+    ) -> None:
         """
         Autosaves intermediate or final results to a text file in the designated directory.
         Args:
@@ -107,19 +306,21 @@ You are a seasoned Mortgage Underwriter. Combine the outputs from the Document A
         with open(full_path, "w", encoding="utf-8") as file:
             file.write(result_data)
 
-    def generate_pdf_report(self, content: str, pdf_path: str) -> None:
+    def generate_pdf_report(
+        self, content: str, pdf_path: str
+    ) -> None:
         """
         Generates a simple PDF report from text content using ReportLab.
         Args:
             content (str): The textual content for the PDF.
             pdf_path (str): Where to save the generated PDF.
         """
-        buffer = BytesIO()
+        BytesIO()
         c = canvas.Canvas(pdf_path, pagesize=LETTER)
         width, height = LETTER
 
         # Simple text wrap by splitting lines
-        lines = content.split("\n")
+        lines = clean_markdown(content).split("\n")
         current_height = height - 50  # top margin
 
         for line in lines:
@@ -151,10 +352,10 @@ You are a seasoned Mortgage Underwriter. Combine the outputs from the Document A
             str: Structured summary and highlights from the document analysis.
         """
         prompt_input = (
-            self.document_prompt +
-            "\n\n--- BEGIN DOCUMENTS ---\n" +
-            document_data +
-            "\n--- END DOCUMENTS ---\n"
+            self.document_prompt
+            + "\n\n--- BEGIN DOCUMENTS ---\n"
+            + document_data
+            + "\n--- END DOCUMENTS ---\n"
         )
         print("Running Document Analyzer Agent...")
         result = self.document_agent.run(prompt_input)
@@ -170,17 +371,19 @@ You are a seasoned Mortgage Underwriter. Combine the outputs from the Document A
             str: Risk analysis including risk score and explanation.
         """
         prompt_input = (
-            self.risk_prompt +
-            "\n\n--- DOCUMENT ANALYSIS OUTPUT ---\n" +
-            document_analysis +
-            "\n--- END ANALYSIS OUTPUT ---\n"
+            self.risk_prompt
+            + "\n\n--- DOCUMENT ANALYSIS OUTPUT ---\n"
+            + document_analysis
+            + "\n--- END ANALYSIS OUTPUT ---\n"
         )
         print("Running Risk Evaluator Agent...")
         result = self.risk_agent.run(prompt_input)
         self.autosave_result(result, "risk_evaluation.txt")
         return result
 
-    def underwrite_mortgage(self, document_analysis: str, risk_evaluation: str) -> str:
+    def underwrite_mortgage(
+        self, document_analysis: str, risk_evaluation: str
+    ) -> str:
         """
         Runs the Mortgage Underwriter Agent to produce the final underwriting decision.
         Args:
@@ -190,10 +393,12 @@ You are a seasoned Mortgage Underwriter. Combine the outputs from the Document A
             str: Final decision text with rationale.
         """
         prompt_input = (
-            self.underwriter_prompt +
-            "\n\n--- DOCUMENT ANALYSIS SUMMARY ---\n" + document_analysis +
-            "\n--- RISK EVALUATION REPORT ---\n" + risk_evaluation +
-            "\n--- END REPORTS ---\n"
+            self.underwriter_prompt
+            + "\n\n--- DOCUMENT ANALYSIS SUMMARY ---\n"
+            + document_analysis
+            + "\n--- RISK EVALUATION REPORT ---\n"
+            + risk_evaluation
+            + "\n--- END REPORTS ---\n"
         )
         print("Running Mortgage Underwriter Agent...")
         result = self.underwriter_agent.run(prompt_input)
@@ -203,21 +408,21 @@ You are a seasoned Mortgage Underwriter. Combine the outputs from the Document A
     # --------------------------------------------------------------------------
     # High-Level Workflow
     # --------------------------------------------------------------------------
-    def process_application(
+    def run(
         self,
         application_data: str,
         return_format: str = "pdf",
-        output_filename: str = "UnderwritingDecision"
+        output_filename: str = "UnderwritingDecision",
     ) -> Union[str, Dict]:
         """
         Processes a single mortgage application from documents to final underwriting decision.
         Allows returning data in either PDF or JSON format.
-        
+
         Args:
             application_data (str): The text representation of the applicant’s documents.
             return_format (str): "pdf" or "json". Defaults to "pdf".
             output_filename (str): Base filename (without extension) for the output file.
-        
+
         Returns:
             Union[str, Dict]: If return_format="json", returns a dict with the final data.
                               If return_format="pdf", returns the path of the generated PDF.
@@ -229,7 +434,9 @@ You are a seasoned Mortgage Underwriter. Combine the outputs from the Document A
         risk_eval = self.evaluate_risk(doc_analysis)
 
         # Step 3: Underwriting Decision
-        final_decision = self.underwrite_mortgage(doc_analysis, risk_eval)
+        final_decision = self.underwrite_mortgage(
+            doc_analysis, risk_eval
+        )
 
         # Prepare final content (text)
         final_content = (
@@ -246,48 +453,79 @@ You are a seasoned Mortgage Underwriter. Combine the outputs from the Document A
                 "risk_evaluation": risk_eval,
                 "final_decision": final_decision,
             }
-            json_path = os.path.join(self.save_directory, f"{output_filename}.json")
+            json_path = os.path.join(
+                self.save_directory, f"{output_filename}.json"
+            )
             with open(json_path, "w", encoding="utf-8") as jf:
                 json.dump(output_data, jf, indent=2)
             return output_data
 
         # Generate PDF
         elif return_format.lower() == "pdf":
-            pdf_path = os.path.join(self.save_directory, f"{output_filename}.pdf")
+            pdf_path = os.path.join(
+                self.save_directory, f"{output_filename}.pdf"
+            )
             self.generate_pdf_report(final_content, pdf_path)
             return pdf_path
 
         else:
-            raise ValueError("Invalid return format. Choose either 'pdf' or 'json'.")
+            raise ValueError(
+                "Invalid return format. Choose either 'pdf' or 'json'."
+            )
+
+    def run_concurrently(
+        self,
+        application_data: str,
+        return_format: str = "pdf",
+        output_filename: str = "UnderwritingDecision",
+    ) -> Union[str, Dict]:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=os.cpu_count()
+        ) as executor:
+            futures = [
+                executor.submit(
+                    self.run,
+                    application_data,
+                    return_format,
+                    output_filename,
+                )
+            ]
+            results = [
+                future.result()
+                for future in concurrent.futures.as_completed(futures)
+            ]
+        return results
 
     # --------------------------------------------------------------------------
     # Batch Processing
     # --------------------------------------------------------------------------
-    def process_applications_in_batch(
+    def runs_in_batch(
         self,
         list_of_application_data: List[str],
-        return_format: str = "pdf"
+        return_format: str = "pdf",
     ) -> List[Union[str, Dict]]:
         """
-        Processes multiple mortgage applications in a batch and returns the results as 
+        Processes multiple mortgage applications in a batch and returns the results as
         either PDFs or JSON structures for each application.
-        
+
         Args:
-            list_of_application_data (List[str]): A list of string representations 
+            list_of_application_data (List[str]): A list of string representations
                                                   of mortgage applications (e.g., raw text).
             return_format (str): "pdf" or "json" format for the output files.
-        
+
         Returns:
             List[Union[str, Dict]]: A list of outputs (either file paths to PDFs or JSON dicts).
         """
         results = []
-        for idx, application_text in enumerate(list_of_application_data, start=1):
+        for idx, application_text in enumerate(
+            list_of_application_data, start=1
+        ):
             output_filename = f"UnderwritingDecision_{idx}"
             print(f"\n--- Processing Application {idx} ---")
-            result = self.process_application(
+            result = self.run(
                 application_data=application_text,
                 return_format=return_format,
-                output_filename=output_filename
+                output_filename=output_filename,
             )
             results.append(result)
         return results
@@ -295,13 +533,15 @@ You are a seasoned Mortgage Underwriter. Combine the outputs from the Document A
     # --------------------------------------------------------------------------
     # PDF/Document Conversion Helpers
     # --------------------------------------------------------------------------
-    def convert_pdfs_to_texts(self, pdf_paths: List[str]) -> List[str]:
+    def convert_pdfs_to_texts(
+        self, pdf_paths: List[str]
+    ) -> List[str]:
         """
         Converts multiple PDFs into text.
-        
+
         Args:
             pdf_paths (List[str]): A list of file paths to PDF documents.
-        
+
         Returns:
             List[str]: A list of extracted text contents, one per PDF in the list.
         """
@@ -319,22 +559,24 @@ You are a seasoned Mortgage Underwriter. Combine the outputs from the Document A
 if __name__ == "__main__":
     # Sample mortgage application text (or read from PDF, DB, etc.)
     sample_application_data = """
-Mortgage Application Data:
-Applicant Name: Jane Doe
-DOB: 02/14/1985
-SSN: 987-65-4321
-Annual Income: $95,000
-Credit Score: 690
-Outstanding Debt: $40,000
-Property Appraisal: $300,000
-Loan Amount Request: $270,000
-Employment: 3+ years at current employer
-Bank Statements & Tax Returns: Provided for the last year
-Extra Notes: Some minor late payments on credit cards in 2020.
-"""
+    Mortgage Application Data:
+    Applicant Name: Jane Doe
+    DOB: 02/14/1985
+    SSN: 987-65-4321
+    Annual Income: $95,000
+    Credit Score: 690
+    Outstanding Debt: $40,000
+    Property Appraisal: $300,000
+    Loan Amount Request: $270,000
+    Employment: 3+ years at current employer
+    Bank Statements & Tax Returns: Provided for the last year
+    Extra Notes: Some minor late payments on credit cards in 2020.
+    """
 
     # Initialize the swarm
-    swarm = MortgageUnderwritingSwarm(save_directory="./autosave_results")
+    swarm = MortgageUnderwritingSwarm(
+        save_directory="./autosave_results"
+    )
 
     # 1) Convert PDF to text if needed
     # pdf_text = swarm.pdf_to_text("path_to_some_pdf.pdf")
@@ -342,20 +584,20 @@ Extra Notes: Some minor late payments on credit cards in 2020.
     # texts_from_pdfs = swarm.convert_pdfs_to_texts(["file1.pdf", "file2.pdf"])
 
     # 2) Process a single application
-    final_pdf_path = swarm.process_application(
+    final_pdf_path = swarm.run(
         application_data=sample_application_data,
         return_format="pdf",  # or "json"
-        output_filename="JaneDoe_UnderwritingDecision"
+        output_filename="JaneDoe_UnderwritingDecision",
     )
     print(f"PDF generated at: {final_pdf_path}")
 
     # 3) Process multiple applications in a batch
-    multiple_apps = [sample_application_data, sample_application_data]  # Pretend we have 2
-    batch_results = swarm.process_applications_in_batch(
-        multiple_apps,
-        return_format="json"
-    )
+    # multiple_apps = [sample_application_data, sample_application_data]  # Pretend we have 2
+    # batch_results = swarm.runs_in_batch(
+    #     multiple_apps,
+    #     return_format="json"
+    # )
     # Each item in batch_results will be a JSON dict if return_format="json".
-    print("\nBatch Processing Results (JSON):")
-    for result in batch_results:
-        print(json.dumps(result, indent=2))
+    # print("\nBatch Processing Results (JSON):")
+    # for result in batch_results:
+    #     print(json.dumps(result, indent=2))
